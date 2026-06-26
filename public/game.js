@@ -302,9 +302,12 @@ function drawBars(p, side) {
 }
 
 function roundRect(x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
-  if (w <= 0) return;
+  // Always reset the path first. If there's nothing to draw (a 0-width bar,
+  // e.g. an empty meter), we leave an empty path so a following ctx.fill()
+  // draws nothing instead of re-filling the previous (full-width) path.
   ctx.beginPath();
+  if (w <= 0 || h <= 0) return;
+  r = Math.min(r, w / 2, h / 2);
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
   ctx.arcTo(x + w, y + h, x, y + h, r);
