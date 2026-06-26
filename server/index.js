@@ -4,7 +4,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
-const { Game, FIELD, GROUND_Y, PLAYER, MAX_HP } = require('./game');
+const { Game, FIELD, GROUND_Y, PLAYER, MAX_HP, MAX_METER } = require('./game');
 
 const PORT = process.env.PORT || 3000;
 const TICK_MS = 1000 / 60; // server simulation + broadcast rate
@@ -34,7 +34,7 @@ function makeRoom(wsA, wsB) {
   wsA.room = room; wsA.side = 'left';
   wsB.room = room; wsB.side = 'right';
 
-  const config = { field: FIELD, groundY: GROUND_Y, player: PLAYER, maxHp: MAX_HP };
+  const config = { field: FIELD, groundY: GROUND_Y, player: PLAYER, maxHp: MAX_HP, maxMeter: MAX_METER };
   send(wsA, { type: 'matched', side: 'left', config });
   send(wsB, { type: 'matched', side: 'right', config });
 

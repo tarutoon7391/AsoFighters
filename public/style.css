@@ -66,7 +66,8 @@ canvas {
 .role.left { color: #4ea1ff; }
 .role.right { color: #ff5d73; }
 
-.help { font-size: 13px; color: #9fb0c8; line-height: 1.9; }
+.help { font-size: 13px; color: #9fb0c8; line-height: 2.1; }
+.hint { display: inline-block; margin-top: 4px; color: #ffd24a; font-size: 12px; }
 
 kbd {
   background: #1b2030;
