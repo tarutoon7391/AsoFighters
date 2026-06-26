@@ -3,96 +3,161 @@
 // ===== DOM =====
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const helpEl = document.getElementById('help');
 const overlay = document.getElementById('overlay');
 const overlayText = document.getElementById('overlay-text');
 const overlaySub = document.getElementById('overlay-sub');
-const roleEl = document.getElementById('role');
 
-// ===== Networking state =====
+const loginEl = document.getElementById('login');
+const nameInput = document.getElementById('name');
+const pwInput = document.getElementById('password');
+const loginBtn = document.getElementById('loginBtn');
+const loginMsg = document.getElementById('loginMsg');
+
+// ===== State =====
 let ws = null;
-let mySide = null;          // 'left' | 'right'
-let cfg = null;             // { field, groundY, player, maxHp, maxMeter }
-let latest = null;          // most recent state snapshot from the server
+let mySide = null;            // 'left' | 'right'
+let cfg = null;
+let meta = null;             // { left:{name,ap}, right:{name,ap} }
+let myStartAp = 0;
+let latest = null;
 
 const COLORS = {
-  left: '#4ea1ff',
-  right: '#ff5d73',
-  leftDark: '#2c5e99',
-  rightDark: '#99384a',
-  meter: '#ffd24a',
-  kick: '#ff9f43',
-  guard: 'rgba(120,200,255,0.85)',
+  left: '#4ea1ff', right: '#ff5d73',
+  leftDark: '#2c5e99', rightDark: '#99384a',
+  meter: '#ffd24a', kick: '#ff9f43', guard: 'rgba(120,200,255,0.85)',
 };
 
-function showOverlay(text, sub) {
+const RANKS = [
+  { name: 'Master',   min: 1000, color: '#ff7be5' },
+  { name: 'Diamond',  min: 750,  color: '#7fdcff' },
+  { name: 'Platinum', min: 500,  color: '#8ee6c8' },
+  { name: 'Gold',     min: 300,  color: '#ffd24a' },
+  { name: 'Silver',   min: 150,  color: '#cfd6e0' },
+  { name: 'Bronze',   min: 0,    color: '#cd7f32' },
+];
+function rankFor(ap) { for (const r of RANKS) if (ap >= r.min) return r; return RANKS[RANKS.length - 1]; }
+
+function showOverlay(text, sub, color) {
   overlayText.textContent = text;
-  overlaySub.textContent = sub || '';
+  overlayText.style.color = color || '#e8edf4';
+  overlaySub.innerHTML = sub || '';
   overlay.classList.remove('hidden');
 }
 function hideOverlay() { overlay.classList.add('hidden'); }
 
+// ===== Login =====
+function doLogin() {
+  const name = nameInput.value.trim();
+  const password = pwInput.value;
+  if (!password) { loginMsg.textContent = 'パスワードを入力してください'; return; }
+  loginBtn.disabled = true;
+  loginMsg.style.color = '#9fb0c8';
+  loginMsg.textContent = '接続中…';
+  connect(() => ws.send(JSON.stringify({ type: 'login', name, password })));
+}
+loginBtn.addEventListener('click', doLogin);
+pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') pwInput.focus(); });
+
 // ===== Connect =====
-function connect() {
+function connect(onOpen) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen = () => onOpen && onOpen();
 
   ws.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
 
     switch (msg.type) {
-      case 'waiting':
-        showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末で開くとマッチします');
-        roleEl.textContent = '';
-        roleEl.className = 'role';
+      case 'loginError':
+        loginBtn.disabled = false;
+        loginMsg.style.color = '#ff8fa0';
+        loginMsg.textContent = msg.error || 'ログインに失敗しました';
         break;
+
+      case 'loggedIn':
+        loginEl.classList.add('hidden');
+        stage.classList.remove('hidden');
+        helpEl.classList.remove('hidden');
+        showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末で同じように<br>ログインするとマッチします');
+        break;
+
+      case 'waiting':
+        showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末で同じように<br>ログインするとマッチします');
+        break;
+
       case 'matched':
         mySide = msg.side;
         cfg = msg.config;
+        meta = msg.players;
+        myStartAp = meta[mySide].ap;
         canvas.width = cfg.field.width;
         canvas.height = cfg.field.height;
-        roleEl.textContent = mySide === 'left' ? 'あなた：左（青）' : 'あなた：右（赤）';
-        roleEl.className = 'role ' + mySide;
         hideOverlay();
         break;
+
       case 'state':
         latest = msg.state;
-        if (latest.status === 'finished') showResult(latest);
-        else hideOverlay();
         break;
+
+      case 'matchEnd':
+        if (meta) { meta.left.ap = msg.ap.left; meta.right.ap = msg.ap.right; }
+        showMatchResult(msg);
+        break;
+
       case 'opponentLeft':
-        showOverlay('相手が退出しました', 'リロードで再マッチ');
+        showOverlay('相手が退出しました', 'リロード（F5）で再マッチ');
         break;
     }
   };
 
-  ws.onclose = () => showOverlay('切断されました', 'リロードで再接続');
+  ws.onclose = () => {
+    if (!loginEl.classList.contains('hidden')) {
+      loginBtn.disabled = false;
+      loginMsg.style.color = '#ff8fa0';
+      loginMsg.textContent = '接続が切れました。もう一度お試しください';
+    } else {
+      showOverlay('切断されました', 'リロード（F5）で再接続');
+    }
+  };
   ws.onerror = () => {};
 }
 
-function showResult(state) {
-  let text;
-  if (state.winner === 'draw') text = 'DRAW';
-  else if (state.winner === mySide) text = 'YOU WIN!';
-  else text = 'YOU LOSE';
-  overlayText.style.color = state.winner === mySide ? '#7CFC9B' : '#ff8fa0';
-  showOverlay(text, 'リロード（F5）で再戦');
+function showMatchResult(msg) {
+  const newAp = meta[mySide].ap;
+  const delta = newAp - myStartAp;
+  let text, color;
+  if (msg.winner === 'draw') { text = 'DRAW'; color = '#e8edf4'; }
+  else if (msg.winner === mySide) { text = 'YOU WIN!'; color = '#7CFC9B'; }
+  else { text = 'YOU LOSE'; color = '#ff8fa0'; }
+
+  const before = rankFor(myStartAp);
+  const after = rankFor(newAp);
+  const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+  let sub = `AP ${newAp}（${deltaStr}）　ランク：<b style="color:${after.color}">${after.name}</b>`;
+  if (after.name !== before.name) {
+    sub += delta >= 0
+      ? `<br><b style="color:${after.color}">▲ ランクアップ！</b>`
+      : `<br><b style="color:#ff8fa0">▼ ランクダウン…</b>`;
+  }
+  sub += '<br><span style="color:#9fb0c8">リロード（F5）で再戦</span>';
+  showOverlay(text, sub, color);
 }
 
 // ===== Input =====
 const input = { left: false, right: false, up: false, punch: false, kick: false, guard: false, special: false };
 let lastSent = '';
-
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
   ArrowUp: 'up', KeyW: 'up', Space: 'up',
-  KeyJ: 'punch',
-  KeyK: 'kick',
+  KeyJ: 'punch', KeyK: 'kick',
   KeyL: 'guard', KeyS: 'guard',
   KeyU: 'special', KeyI: 'special',
 };
-
 function sendInput() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   const payload = JSON.stringify(input);
@@ -100,18 +165,18 @@ function sendInput() {
   lastSent = payload;
   ws.send(JSON.stringify({ type: 'input', input }));
 }
-
 window.addEventListener('keydown', (e) => {
-  const action = KEYMAP[e.code];
-  if (!action) return;
+  if (loginEl && !loginEl.classList.contains('hidden')) return; // typing in the form
+  const a = KEYMAP[e.code];
+  if (!a) return;
   e.preventDefault();
-  if (!input[action]) { input[action] = true; sendInput(); }
+  if (!input[a]) { input[a] = true; sendInput(); }
 });
 window.addEventListener('keyup', (e) => {
-  const action = KEYMAP[e.code];
-  if (!action) return;
+  const a = KEYMAP[e.code];
+  if (!a) return;
   e.preventDefault();
-  if (input[action]) { input[action] = false; sendInput(); }
+  if (input[a]) { input[a] = false; sendInput(); }
 });
 window.addEventListener('blur', () => {
   let changed = false;
@@ -123,103 +188,73 @@ window.addEventListener('blur', () => {
 function draw() {
   requestAnimationFrame(draw);
   if (!cfg) return;
-
-  const W = cfg.field.width;
-  const H = cfg.field.height;
-  const groundY = cfg.groundY;
+  const W = cfg.field.width, H = cfg.field.height, groundY = cfg.groundY;
 
   ctx.clearRect(0, 0, W, H);
   const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-  sky.addColorStop(0, '#0b0e14');
-  sky.addColorStop(1, '#161d2c');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, groundY);
-  ctx.fillStyle = '#222b3d';
-  ctx.fillRect(0, groundY, W, H - groundY);
-  ctx.fillStyle = '#2f3a52';
-  ctx.fillRect(0, groundY, W, 4);
+  sky.addColorStop(0, '#0b0e14'); sky.addColorStop(1, '#161d2c');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, groundY);
+  ctx.fillStyle = '#222b3d'; ctx.fillRect(0, groundY, W, H - groundY);
+  ctx.fillStyle = '#2f3a52'; ctx.fillRect(0, groundY, W, 4);
 
   if (!latest) return;
 
-  // projectiles behind fighters
   for (const pr of latest.pr || []) drawProjectile(pr);
-
   drawFighter(latest.left, 'left');
   drawFighter(latest.right, 'right');
 
-  drawBars(latest.left, 'left');
-  drawBars(latest.right, 'right');
+  drawHud(latest.left, 'left');
+  drawHud(latest.right, 'right');
+  drawRoundPips();
+  drawCountdown();
 }
 
 function drawFighter(p, side) {
-  const PW = cfg.player.w;
-  const PH = cfg.player.h;
+  const PW = cfg.player.w, PH = cfg.player.h;
   const x = p.x, y = p.y;
   const base = COLORS[side];
   const dark = side === 'left' ? COLORS.leftDark : COLORS.rightDark;
   const flashing = p.s === 1 && (latest.t % 6 < 3);
 
-  // torso
   ctx.fillStyle = flashing ? '#ffffff' : base;
-  roundRect(x, y + PH * 0.28, PW, PH * 0.72, 8);
-  ctx.fill();
+  roundRect(x, y + PH * 0.28, PW, PH * 0.72, 8); ctx.fill();
 
-  // head
-  const headR = PW * 0.34;
-  const headCx = x + PW / 2;
-  const headCy = y + PH * 0.2;
+  const headR = PW * 0.34, headCx = x + PW / 2, headCy = y + PH * 0.2;
   ctx.fillStyle = flashing ? '#ffffff' : dark;
-  ctx.beginPath();
-  ctx.arc(headCx, headCy, headR, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(headCx, headCy, headR, 0, Math.PI * 2); ctx.fill();
 
-  // eye (facing)
   ctx.fillStyle = '#0b0e14';
-  ctx.beginPath();
-  ctx.arc(headCx + p.f * headR * 0.4, headCy, headR * 0.22, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(headCx + p.f * headR * 0.4, headCy, headR * 0.22, 0, Math.PI * 2); ctx.fill();
 
-  // attack limbs (ak: 1 punch, 2 kick, 3 special; ap: 1 windup, 2 active, 3 recovery)
-  if (p.ak === 1) drawArm(p, PW, PH, base, p.ap === 2 ? 0.95 : 0.4, 0.42, '#ffd24a');
-  else if (p.ak === 2) drawArm(p, PW, PH, COLORS.kick, p.ap === 1 ? 0.45 : 1.25, 0.66, COLORS.kick, 11);
+  if (p.ak === 1) drawLimb(p, PW, PH, base, p.ap === 2 ? 0.95 : 0.4, 0.42, '#ffd24a');
+  else if (p.ak === 2) drawLimb(p, PW, PH, COLORS.kick, p.ap === 1 ? 0.45 : 1.25, 0.66, COLORS.kick, 11);
   else if (p.ak === 3) drawSpecialPose(p, PW, PH);
 
-  // guard shield
   if (p.g === 1) {
     const sx = p.f === 1 ? x + PW - 4 : x - 8;
     ctx.fillStyle = COLORS.guard;
-    roundRect(sx, y + PH * 0.22, 12, PH * 0.74, 6);
-    ctx.fill();
+    roundRect(sx, y + PH * 0.22, 12, PH * 0.74, 6); ctx.fill();
     ctx.fillStyle = 'rgba(120,200,255,0.18)';
-    roundRect(x - 3, y + PH * 0.24, PW + 6, PH * 0.74, 8);
-    ctx.fill();
+    roundRect(x - 3, y + PH * 0.24, PW + 6, PH * 0.74, 8); ctx.fill();
   }
 
-  // "YOU" tag
   if (side === mySide) {
     ctx.fillStyle = '#e8edf4';
-    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('YOU', headCx, y - 6);
   }
 }
 
-function drawArm(p, PW, PH, color, reachFrac, heightFrac, fistColor, fistR = 9) {
+function drawLimb(p, PW, PH, color, reachFrac, heightFrac, tipColor, tipR = 9) {
   const x = p.x, y = p.y;
   const limbY = y + PH * heightFrac;
   const startX = p.f === 1 ? x + PW : x;
   const tipX = startX + p.f * PW * reachFrac;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 8;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(startX, limbY);
-  ctx.lineTo(tipX, limbY);
-  ctx.stroke();
-  ctx.fillStyle = fistColor;
-  ctx.beginPath();
-  ctx.arc(tipX, limbY, fistR, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(startX, limbY); ctx.lineTo(tipX, limbY); ctx.stroke();
+  ctx.fillStyle = tipColor;
+  ctx.beginPath(); ctx.arc(tipX, limbY, tipR, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawSpecialPose(p, PW, PH) {
@@ -227,84 +262,126 @@ function drawSpecialPose(p, PW, PH) {
   const handY = y + PH * 0.46;
   const startX = p.f === 1 ? x + PW : x;
   const tipX = startX + p.f * PW * 0.7;
-  // both arms thrust forward
-  ctx.strokeStyle = '#e8edf4';
-  ctx.lineWidth = 9;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(startX, handY);
-  ctx.lineTo(tipX, handY);
-  ctx.stroke();
-  // charging glow at the hands
+  ctx.strokeStyle = '#e8edf4'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(startX, handY); ctx.lineTo(tipX, handY); ctx.stroke();
   const glow = ctx.createRadialGradient(tipX, handY, 2, tipX, handY, 22);
   glow.addColorStop(0, p.ap === 2 ? '#ffffff' : '#aee9ff');
   glow.addColorStop(1, 'rgba(120,200,255,0)');
   ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(tipX, handY, p.ap === 2 ? 26 : 18, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(tipX, handY, p.ap === 2 ? 26 : 18, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawProjectile(pr) {
-  const cx = pr.x + 15, cy = pr.y + 15;        // server box is 30x30
-  const r = 16;
+  const cx = pr.x + 15, cy = pr.y + 15, r = 16;
   const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);
-  g.addColorStop(0, '#ffffff');
-  g.addColorStop(0.4, '#7fdcff');
-  g.addColorStop(1, 'rgba(60,160,255,0)');
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, '#7fdcff'); g.addColorStop(1, 'rgba(60,160,255,0)');
   ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  // small trailing streak
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(127,220,255,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(cx - pr.d * 10, cy, 14, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx - pr.d * 10, cy, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
 }
 
-function drawBars(p, side) {
+function drawHud(p, side) {
   const W = cfg.field.width;
-  const barW = W * 0.4;
-  const pad = 20;
+  const barW = W * 0.4, pad = 18;
   const x = side === 'left' ? pad : W - pad - barW;
+  const m = meta ? meta[side] : { name: side, ap: 0 };
+  const rank = rankFor(m.ap);
+  const align = side === 'left' ? 'left' : 'right';
+  const anchor = side === 'left' ? x : x + barW;
 
-  // HP
-  const hpY = 14, hpH = 18;
-  const hpFrac = Math.max(0, p.hp / cfg.maxHp);
-  ctx.fillStyle = '#0b0e14';
-  ctx.strokeStyle = '#2a3346';
-  ctx.lineWidth = 2;
-  roundRect(x, hpY, barW, hpH, 5); ctx.fill(); ctx.stroke();
-  const hpFillW = barW * hpFrac;
-  const hpFx = side === 'left' ? x : x + (barW - hpFillW);
+  // name
+  ctx.textAlign = align;
   ctx.fillStyle = COLORS[side];
-  roundRect(hpFx, hpY, hpFillW, hpH, 5); ctx.fill();
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillText(m.name, anchor, 20);
 
-  // Meter
-  const mY = 36, mH = 8;
+  // HP bar
+  const hpY = 28, hpH = 15;
+  const hpFrac = Math.max(0, p.hp / cfg.maxHp);
+  ctx.fillStyle = '#0b0e14'; ctx.strokeStyle = '#2a3346'; ctx.lineWidth = 2;
+  roundRect(x, hpY, barW, hpH, 5); ctx.fill(); ctx.stroke();
+  const hpW = barW * hpFrac;
+  const hpFx = side === 'left' ? x : x + (barW - hpW);
+  ctx.fillStyle = COLORS[side];
+  roundRect(hpFx, hpY, hpW, hpH, 5); ctx.fill();
+
+  // meter bar
+  const mY = 47, mH = 6;
   const mFrac = Math.max(0, p.mp / cfg.maxMeter);
   const full = p.mp >= cfg.maxMeter;
-  ctx.fillStyle = '#0b0e14';
-  ctx.strokeStyle = '#2a3346';
-  roundRect(x, mY, barW, mH, 4); ctx.fill(); ctx.stroke();
-  const mFillW = barW * mFrac;
-  const mFx = side === 'left' ? x : x + (barW - mFillW);
+  ctx.fillStyle = '#0b0e14'; ctx.strokeStyle = '#2a3346';
+  roundRect(x, mY, barW, mH, 3); ctx.fill(); ctx.stroke();
+  const mW = barW * mFrac;
+  const mFx = side === 'left' ? x : x + (barW - mW);
   ctx.fillStyle = full && (latest.t % 12 < 6) ? '#ffffff' : COLORS.meter;
-  roundRect(mFx, mY, mFillW, mH, 4); ctx.fill();
+  roundRect(mFx, mY, mW, mH, 3); ctx.fill();
 
-  if (full) {
-    ctx.fillStyle = '#ffd24a';
-    ctx.font = 'bold 11px system-ui, sans-serif';
-    ctx.textAlign = side === 'left' ? 'left' : 'right';
-    ctx.fillText('★ SPECIAL READY (U)', side === 'left' ? x : x + barW, mY + mH + 12);
+  // rank + AP (+ special-ready note)
+  ctx.textAlign = align;
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillStyle = rank.color;
+  ctx.fillText(rank.name, anchor, 67);
+  ctx.fillStyle = '#cfd6e0';
+  ctx.font = '12px system-ui, sans-serif';
+  const apText = `AP ${m.ap}` + (full ? '  ★SP' : '');
+  const rankW = measureBold(rank.name);
+  ctx.font = '12px system-ui, sans-serif';
+  if (side === 'left') ctx.fillText('・ ' + apText, anchor + rankW + 6, 67);
+  else ctx.fillText(apText + ' ・', anchor - rankW - 6, 67);
+}
+
+function measureBold(t) {
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  return ctx.measureText(t).width;
+}
+
+function drawRoundPips() {
+  if (!latest.roundResults) return;
+  const W = cfg.field.width;
+  const r = 9, gap = 26, n = 3;
+  const totalW = (n - 1) * gap;
+  const cx0 = W / 2 - totalW / 2;
+  const y = 20;
+  for (let i = 0; i < n; i++) {
+    const cx = cx0 + i * gap;
+    const res = latest.roundResults[i];
+    ctx.beginPath(); ctx.arc(cx, y, r, 0, Math.PI * 2);
+    if (res === 'left') ctx.fillStyle = COLORS.left;
+    else if (res === 'right') ctx.fillStyle = COLORS.right;
+    else if (res === 'draw') ctx.fillStyle = '#6b7791';
+    else ctx.fillStyle = '#1b2233';
+    ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#2a3346'; ctx.stroke();
   }
 }
 
+function drawCountdown() {
+  const W = cfg.field.width, H = cfg.field.height;
+  // round-over banner
+  if (latest.phase === 'roundover' && meta) {
+    const rw = latest.roundWinner;
+    const txt = rw === 'draw' ? '引き分け' : `${meta[rw].name} がラウンド取得！`;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 30px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(txt, W / 2 + 2, H * 0.4 + 2);
+    ctx.fillStyle = rw === 'left' ? COLORS.left : rw === 'right' ? COLORS.right : '#e8edf4';
+    ctx.fillText(txt, W / 2, H * 0.4);
+    return;
+  }
+
+  const c = latest.count;
+  if (!c) return;
+  ctx.textAlign = 'center';
+  const isFight = c === 'FIGHT';
+  ctx.font = `bold ${isFight ? 64 : 100}px system-ui, sans-serif`;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillText(isFight ? 'FIGHT!' : c, W / 2 + 3, H * 0.44 + 3);
+  ctx.fillStyle = isFight ? '#ffd24a' : '#ffffff';
+  ctx.fillText(isFight ? 'FIGHT!' : c, W / 2, H * 0.44);
+}
+
 function roundRect(x, y, w, h, r) {
-  // Always reset the path first. If there's nothing to draw (a 0-width bar,
-  // e.g. an empty meter), we leave an empty path so a following ctx.fill()
-  // draws nothing instead of re-filling the previous (full-width) path.
   ctx.beginPath();
   if (w <= 0 || h <= 0) return;
   r = Math.min(r, w / 2, h / 2);
@@ -317,6 +394,5 @@ function roundRect(x, y, w, h, r) {
 }
 
 // ===== Boot =====
-showOverlay('接続中…', '');
-connect();
 requestAnimationFrame(draw);
+nameInput.focus();

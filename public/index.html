@@ -10,17 +10,29 @@
   <div id="app">
     <h1>AsoFighters</h1>
 
-    <div id="stage">
+    <!-- Login screen -->
+    <div id="login" class="login">
+      <h2>ログイン / 新規登録</h2>
+      <input id="name" maxlength="12" placeholder="名前（12文字まで）" autocomplete="off" />
+      <input id="password" type="password" placeholder="パスワード" autocomplete="off" />
+      <button id="loginBtn">ログインしてマッチング</button>
+      <p id="loginMsg" class="loginmsg"></p>
+      <p class="loginhint">
+        ※ パスワードがアカウントの鍵です。初回は名前＋パスワードで登録（AP100スタート）、
+        次回からは同じパスワードでログインします。
+      </p>
+    </div>
+
+    <!-- Game -->
+    <div id="stage" class="hidden">
       <canvas id="game" width="800" height="400"></canvas>
-      <div id="overlay" class="overlay">
-        <div id="overlay-text">接続中…</div>
+      <div id="overlay" class="overlay hidden">
+        <div id="overlay-text"></div>
         <div id="overlay-sub"></div>
       </div>
     </div>
 
-    <p id="role" class="role"></p>
-
-    <div class="help">
+    <div id="help" class="help hidden">
       <strong>操作</strong>：
       移動 <kbd>A</kbd>/<kbd>D</kbd>・<kbd>←</kbd>/<kbd>→</kbd>
       ジャンプ <kbd>W</kbd>/<kbd>↑</kbd>/<kbd>Space</kbd>
@@ -29,7 +41,7 @@
       ガード <kbd>L</kbd>/<kbd>S</kbd>（長押し）
       必殺技 <kbd>U</kbd>（ゲージ満タンで）
       <br>
-      <span class="hint">パンチ・キックを当てると黄色いゲージが溜まり、満タンでエネルギー弾を撃てます。</span>
+      <span class="hint">2本先取（ベスト3）。勝つと +15 AP、負けると −10 AP。</span>
     </div>
   </div>
 
