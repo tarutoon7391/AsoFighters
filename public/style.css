@@ -1,0 +1,79 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #10131a;
+  color: #e8edf4;
+}
+
+#app {
+  width: 100%;
+  max-width: 840px;
+  padding: 16px;
+  text-align: center;
+}
+
+h1 {
+  margin: 8px 0 14px;
+  letter-spacing: 2px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #4ea1ff, #ff5d73);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 800 / 400;
+}
+
+canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 2px solid #2a3346;
+  border-radius: 10px;
+  background: #0b0e14;
+  image-rendering: pixelated;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(8, 10, 16, 0.72);
+  border-radius: 10px;
+  text-align: center;
+  padding: 16px;
+}
+
+.overlay.hidden { display: none; }
+
+#overlay-text { font-size: clamp(20px, 5vw, 34px); font-weight: 800; }
+#overlay-sub { font-size: 14px; color: #9fb0c8; }
+
+.role { min-height: 20px; margin: 10px 0 4px; font-weight: 700; }
+.role.left { color: #4ea1ff; }
+.role.right { color: #ff5d73; }
+
+.help { font-size: 13px; color: #9fb0c8; line-height: 1.9; }
+
+kbd {
+  background: #1b2030;
+  border: 1px solid #2a3346;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 12px;
+}

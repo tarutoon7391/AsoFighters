@@ -1,0 +1,19 @@
+{
+  "name": "asofighters",
+  "version": "0.1.0",
+  "description": "Real-time online fighting game (server-authoritative, WebSocket).",
+  "type": "commonjs",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}

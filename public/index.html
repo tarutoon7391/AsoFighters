@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AsoFighters</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <h1>AsoFighters</h1>
+
+    <div id="stage">
+      <canvas id="game" width="800" height="400"></canvas>
+      <div id="overlay" class="overlay">
+        <div id="overlay-text">接続中…</div>
+        <div id="overlay-sub"></div>
+      </div>
+    </div>
+
+    <p id="role" class="role"></p>
+
+    <div class="help">
+      <strong>操作</strong>：
+      移動 <kbd>A</kbd>/<kbd>D</kbd> または <kbd>←</kbd>/<kbd>→</kbd>
+      ジャンプ <kbd>W</kbd>/<kbd>↑</kbd>/<kbd>Space</kbd>
+      パンチ <kbd>J</kbd>/<kbd>F</kbd>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
