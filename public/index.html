@@ -23,12 +23,31 @@
       </p>
     </div>
 
+    <!-- Profile screen -->
+    <div id="profile" class="profile hidden">
+      <div class="pcard">
+        <div class="pcard-top">
+          <span id="p-name" class="p-name"></span>
+          <span id="p-rank" class="p-rank"></span>
+        </div>
+        <div id="p-ap" class="p-ap"></div>
+        <div id="p-stats" class="p-stats"></div>
+        <div id="p-streak" class="p-streak"></div>
+        <button id="battleBtn" class="battlebtn">バトル開始</button>
+      </div>
+      <div class="ranking">
+        <h3>ランキング <span class="rank-sub">TOP 10</span></h3>
+        <ol id="rank-list" class="rank-list"></ol>
+      </div>
+    </div>
+
     <!-- Game -->
     <div id="stage" class="hidden">
       <canvas id="game" width="800" height="400"></canvas>
       <div id="overlay" class="overlay hidden">
         <div id="overlay-text"></div>
         <div id="overlay-sub"></div>
+        <button id="overlay-btn" class="overlay-btn hidden">プロフィールに戻る</button>
       </div>
     </div>
 

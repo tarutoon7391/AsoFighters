@@ -110,6 +110,82 @@ canvas {
 .loginmsg { min-height: 18px; margin: 0; color: #ff8fa0; font-size: 13px; }
 .loginhint { margin: 0; color: #9fb0c8; font-size: 12px; line-height: 1.7; text-align: left; }
 
+/* Profile screen */
+.profile {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px auto;
+  text-align: left;
+}
+@media (max-width: 640px) { .profile { grid-template-columns: 1fr; } }
+
+.pcard {
+  background: #161d2c;
+  border: 1px solid #2a3346;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pcard-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.p-name { font-size: 22px; font-weight: 800; }
+.p-rank { font-size: 16px; font-weight: 800; }
+.p-ap { font-size: 15px; color: #cfd6e0; }
+.p-ap b { color: #ffd24a; }
+.p-stats { font-size: 14px; color: #cfd6e0; }
+.p-streak { font-size: 14px; color: #ff9f43; font-weight: 700; min-height: 18px; }
+.battlebtn {
+  margin-top: 8px;
+  padding: 14px;
+  font-size: 17px;
+  font-weight: 800;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #2a0410;
+  background: linear-gradient(90deg, #ff5d73, #ff9f43);
+}
+.battlebtn:hover { filter: brightness(1.08); }
+
+.ranking {
+  background: #161d2c;
+  border: 1px solid #2a3346;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.ranking h3 { margin: 4px 0 10px; font-size: 16px; }
+.rank-sub { color: #9fb0c8; font-size: 12px; font-weight: 500; }
+.rank-list { margin: 0; padding: 0; list-style: none; counter-reset: rk; }
+.rank-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #222b3d;
+  font-size: 14px;
+}
+.rank-list li:last-child { border-bottom: none; }
+.rank-list .rk-pos { width: 26px; color: #9fb0c8; font-weight: 700; text-align: right; }
+.rank-list .rk-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-list .rk-tier { font-size: 12px; font-weight: 700; }
+.rank-list .rk-ap { width: 84px; text-align: right; color: #ffd24a; }
+.rank-list li.me { background: rgba(78,161,255,0.12); border-radius: 6px; }
+
+.overlay-btn {
+  margin-top: 14px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #06101f;
+  background: linear-gradient(90deg, #4ea1ff, #7fdcff);
+}
+.overlay-btn:hover { filter: brightness(1.08); }
+
 kbd {
   background: #1b2030;
   border: 1px solid #2a3346;

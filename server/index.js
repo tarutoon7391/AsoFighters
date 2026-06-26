@@ -60,34 +60,51 @@ function makeRoom(wsA, wsB) {
   console.log(`[room ${id}] ${players.left.name} vs ${players.right.name}`);
 }
 
-// Apply AP changes once a match is decided, then tell both clients the new totals.
-function settleMatch(room) {
+// Apply AP changes once a match is decided, then tell each client their own
+// result (AP delta, streak bonus, updated stats) plus a fresh leaderboard.
+async function settleMatch(room) {
   const winSide = room.game.winner;
   const left = room.sockets.left;
   const right = room.sockets.right;
 
-  const announce = () => {
-    const payload = {
-      type: 'matchEnd',
-      winner: winSide,
-      ap: { left: left.account.ap, right: right.account.ap },
-    };
-    send(left, payload);
-    send(right, payload);
-  };
+  try {
+    if (winSide === 'left' || winSide === 'right') {
+      const winner = room.sockets[winSide];
+      const loser = room.sockets[winSide === 'left' ? 'right' : 'left'];
+      const res = await db.applyResult(winner.account.key, loser.account.key);
+      if (res.winner) winner.account.ap = res.winner.ap;
+      if (res.loser) loser.account.ap = res.loser.ap;
+      const board = await db.leaderboard(10);
+      send(winner, { type: 'matchEnd', result: 'win', you: res.winner, leaderboard: board });
+      send(loser, { type: 'matchEnd', result: 'lose', you: res.loser, leaderboard: board });
+    } else {
+      // draw: no AP / streak change — just hand back current stats
+      const board = await db.leaderboard(10);
+      const meL = await db.profile(left.account.key);
+      const meR = await db.profile(right.account.key);
+      send(left, { type: 'matchEnd', result: 'draw', you: drawStats(meL), leaderboard: board });
+      send(right, { type: 'matchEnd', result: 'draw', you: drawStats(meR), leaderboard: board });
+    }
+  } catch (e) {
+    console.error('[db] settleMatch failed:', e.message);
+  }
+}
 
-  if (winSide === 'left' || winSide === 'right') {
-    const winner = room.sockets[winSide];
-    const loser = room.sockets[winSide === 'left' ? 'right' : 'left'];
-    db.applyResult(winner.account.key, loser.account.key)
-      .then(({ winnerAp, loserAp }) => {
-        if (winnerAp != null) winner.account.ap = winnerAp;
-        if (loserAp != null) loser.account.ap = loserAp;
-      })
-      .catch((e) => console.error('[db] applyResult failed:', e.message))
-      .finally(announce);
-  } else {
-    announce(); // draw: no AP change
+function drawStats(me) {
+  if (!me) return null;
+  return { ap: me.ap, wins: me.wins, losses: me.losses, streak: me.streak, bestStreak: me.bestStreak, delta: 0, bonus: 0, base: 0 };
+}
+
+// Send a player their profile card data plus the current leaderboard.
+async function sendProfile(ws) {
+  if (!ws.account) return;
+  try {
+    const me = await db.profile(ws.account.key);
+    const board = await db.leaderboard(10);
+    if (me) ws.account.ap = me.ap;
+    send(ws, { type: 'profile', me, leaderboard: board });
+  } catch (e) {
+    console.error('[db] sendProfile failed:', e.message);
   }
 }
 
@@ -135,10 +152,23 @@ wss.on('connection', (ws) => {
         const acc = await db.login(msg.name, password);
         ws.account = acc;
         send(ws, { type: 'loggedIn', name: acc.name, ap: acc.ap });
-        enqueue(ws);
+        await sendProfile(ws);                       // -> show the profile screen (no auto-queue)
       } catch (e) {
         console.error('[login] failed:', e.message);
         send(ws, { type: 'loginError', error: 'ログインに失敗しました' });
+      }
+      return;
+    }
+
+    if (msg.type === 'queue') {
+      if (ws.account && !ws.room && waiting !== ws) enqueue(ws);
+      return;
+    }
+
+    if (msg.type === 'profile') {
+      if (ws.account && !ws.room) {
+        if (waiting === ws) waiting = null;          // leaving the queue back to profile
+        await sendProfile(ws);
       }
       return;
     }

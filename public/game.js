@@ -8,6 +8,7 @@ const helpEl = document.getElementById('help');
 const overlay = document.getElementById('overlay');
 const overlayText = document.getElementById('overlay-text');
 const overlaySub = document.getElementById('overlay-sub');
+const overlayBtn = document.getElementById('overlay-btn');
 
 const loginEl = document.getElementById('login');
 const nameInput = document.getElementById('name');
@@ -15,20 +16,29 @@ const pwInput = document.getElementById('password');
 const loginBtn = document.getElementById('loginBtn');
 const loginMsg = document.getElementById('loginMsg');
 
+const profileEl = document.getElementById('profile');
+const battleBtn = document.getElementById('battleBtn');
+const pName = document.getElementById('p-name');
+const pRank = document.getElementById('p-rank');
+const pAp = document.getElementById('p-ap');
+const pStats = document.getElementById('p-stats');
+const pStreak = document.getElementById('p-streak');
+const rankList = document.getElementById('rank-list');
+
 // ===== State =====
 let ws = null;
-let mySide = null;            // 'left' | 'right'
+let mySide = null;
 let cfg = null;
-let meta = null;             // { left:{name,ap}, right:{name,ap} }
-let myStartAp = 0;
+let meta = null;            // both players' name+ap for the in-match HUD
 let latest = null;
+let myProfile = null;       // { name, ap, wins, losses, streak, bestStreak, rank }
+let leaderboard = [];
 
 const COLORS = {
   left: '#4ea1ff', right: '#ff5d73',
   leftDark: '#2c5e99', rightDark: '#99384a',
   meter: '#ffd24a', kick: '#ff9f43', guard: 'rgba(120,200,255,0.85)',
 };
-
 const RANKS = [
   { name: 'Master',   min: 1000, color: '#ff7be5' },
   { name: 'Diamond',  min: 750,  color: '#7fdcff' },
@@ -39,13 +49,64 @@ const RANKS = [
 ];
 function rankFor(ap) { for (const r of RANKS) if (ap >= r.min) return r; return RANKS[RANKS.length - 1]; }
 
-function showOverlay(text, sub, color) {
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function showOverlay(text, sub, color, withButton) {
   overlayText.textContent = text;
   overlayText.style.color = color || '#e8edf4';
   overlaySub.innerHTML = sub || '';
+  overlayBtn.classList.toggle('hidden', !withButton);
   overlay.classList.remove('hidden');
 }
 function hideOverlay() { overlay.classList.add('hidden'); }
+
+// ===== Views =====
+function showProfile() {
+  loginEl.classList.add('hidden');
+  stage.classList.add('hidden');
+  helpEl.classList.add('hidden');
+  hideOverlay();
+  latest = null; mySide = null;
+  profileEl.classList.remove('hidden');
+  renderProfile();
+}
+function showSearching() {
+  profileEl.classList.add('hidden');
+  loginEl.classList.add('hidden');
+  stage.classList.remove('hidden');
+  helpEl.classList.remove('hidden');
+  showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末でログインして<br>バトル開始するとマッチします', null, true);
+}
+
+function renderProfile() {
+  if (!myProfile) return;
+  const rk = rankFor(myProfile.ap);
+  pName.textContent = myProfile.name;
+  pRank.textContent = rk.name;
+  pRank.style.color = rk.color;
+  pAp.innerHTML = `<b>AP ${myProfile.ap}</b>　・　世界 #${myProfile.rank}`;
+  const total = myProfile.wins + myProfile.losses;
+  const rate = total ? Math.round((myProfile.wins / total) * 100) : 0;
+  pStats.textContent = `戦績：${myProfile.wins}勝 ${myProfile.losses}敗（勝率 ${rate}%）`;
+  pStreak.textContent = myProfile.streak > 0
+    ? `🔥 現在 ${myProfile.streak}連勝中（最高 ${myProfile.bestStreak}連勝）`
+    : `最高 ${myProfile.bestStreak}連勝`;
+
+  rankList.innerHTML = '';
+  leaderboard.forEach((e, i) => {
+    const tier = rankFor(e.ap);
+    const li = document.createElement('li');
+    if (e.name === myProfile.name && e.ap === myProfile.ap) li.classList.add('me');
+    li.innerHTML =
+      `<span class="rk-pos">${i + 1}</span>` +
+      `<span class="rk-name">${escapeHtml(e.name)}</span>` +
+      `<span class="rk-tier" style="color:${tier.color}">${tier.name}</span>` +
+      `<span class="rk-ap">AP ${e.ap}</span>`;
+    rankList.appendChild(li);
+  });
+}
 
 // ===== Login =====
 function doLogin() {
@@ -60,6 +121,15 @@ function doLogin() {
 loginBtn.addEventListener('click', doLogin);
 pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') pwInput.focus(); });
+
+battleBtn.addEventListener('click', () => {
+  showSearching();
+  ws.send(JSON.stringify({ type: 'queue' }));
+});
+overlayBtn.addEventListener('click', () => {
+  hideOverlay();
+  ws.send(JSON.stringify({ type: 'profile' })); // server replies 'profile' -> showProfile()
+});
 
 // ===== Connect =====
 function connect(onOpen) {
@@ -79,21 +149,23 @@ function connect(onOpen) {
         break;
 
       case 'loggedIn':
-        loginEl.classList.add('hidden');
-        stage.classList.remove('hidden');
-        helpEl.classList.remove('hidden');
-        showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末で同じように<br>ログインするとマッチします');
+        // wait for the 'profile' message to show the profile screen
+        break;
+
+      case 'profile':
+        myProfile = msg.me;
+        leaderboard = msg.leaderboard || [];
+        showProfile();
         break;
 
       case 'waiting':
-        showOverlay('対戦相手を探しています…', 'もう一つのタブ／別端末で同じように<br>ログインするとマッチします');
+        // already showing the searching overlay
         break;
 
       case 'matched':
         mySide = msg.side;
         cfg = msg.config;
         meta = msg.players;
-        myStartAp = meta[mySide].ap;
         canvas.width = cfg.field.width;
         canvas.height = cfg.field.height;
         hideOverlay();
@@ -104,12 +176,11 @@ function connect(onOpen) {
         break;
 
       case 'matchEnd':
-        if (meta) { meta.left.ap = msg.ap.left; meta.right.ap = msg.ap.right; }
-        showMatchResult(msg);
+        applyMatchEnd(msg);
         break;
 
       case 'opponentLeft':
-        showOverlay('相手が退出しました', 'リロード（F5）で再マッチ');
+        showOverlay('相手が退出しました', '次の対戦相手を探せます', '#e8edf4', true);
         break;
     }
   };
@@ -120,31 +191,41 @@ function connect(onOpen) {
       loginMsg.style.color = '#ff8fa0';
       loginMsg.textContent = '接続が切れました。もう一度お試しください';
     } else {
-      showOverlay('切断されました', 'リロード（F5）で再接続');
+      showOverlay('切断されました', 'リロード（F5）で再接続', '#ff8fa0', false);
     }
   };
   ws.onerror = () => {};
 }
 
-function showMatchResult(msg) {
-  const newAp = meta[mySide].ap;
-  const delta = newAp - myStartAp;
-  let text, color;
-  if (msg.winner === 'draw') { text = 'DRAW'; color = '#e8edf4'; }
-  else if (msg.winner === mySide) { text = 'YOU WIN!'; color = '#7CFC9B'; }
-  else { text = 'YOU LOSE'; color = '#ff8fa0'; }
+function applyMatchEnd(msg) {
+  const you = msg.you || {};
+  if (myProfile && you.ap != null) {
+    myProfile.ap = you.ap; myProfile.wins = you.wins; myProfile.losses = you.losses;
+    myProfile.streak = you.streak; myProfile.bestStreak = you.bestStreak;
+  }
+  if (msg.leaderboard) leaderboard = msg.leaderboard;
 
-  const before = rankFor(myStartAp);
-  const after = rankFor(newAp);
+  let text, color;
+  if (msg.result === 'win') { text = 'YOU WIN!'; color = '#7CFC9B'; }
+  else if (msg.result === 'lose') { text = 'YOU LOSE'; color = '#ff8fa0'; }
+  else { text = 'DRAW'; color = '#e8edf4'; }
+
+  const newAp = you.ap, delta = you.delta || 0;
   const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+  const after = rankFor(newAp);
+  const before = rankFor(newAp - delta);
   let sub = `AP ${newAp}（${deltaStr}）　ランク：<b style="color:${after.color}">${after.name}</b>`;
+  if (msg.result === 'win' && you.bonus > 0) {
+    sub += `<br><span style="color:#ff9f43">🔥 ${you.streak}連勝ボーナス +${you.bonus} AP</span>`;
+  } else if (msg.result === 'win' && you.streak > 1) {
+    sub += `<br><span style="color:#ff9f43">🔥 ${you.streak}連勝中</span>`;
+  }
   if (after.name !== before.name) {
     sub += delta >= 0
       ? `<br><b style="color:${after.color}">▲ ランクアップ！</b>`
       : `<br><b style="color:#ff8fa0">▼ ランクダウン…</b>`;
   }
-  sub += '<br><span style="color:#9fb0c8">リロード（F5）で再戦</span>';
-  showOverlay(text, sub, color);
+  showOverlay(text, sub, color, true);
 }
 
 // ===== Input =====
@@ -165,8 +246,9 @@ function sendInput() {
   lastSent = payload;
   ws.send(JSON.stringify({ type: 'input', input }));
 }
+function gameKeysActive() { return !stage.classList.contains('hidden') && !!latest; }
 window.addEventListener('keydown', (e) => {
-  if (loginEl && !loginEl.classList.contains('hidden')) return; // typing in the form
+  if (!gameKeysActive()) return;
   const a = KEYMAP[e.code];
   if (!a) return;
   e.preventDefault();
@@ -187,7 +269,7 @@ window.addEventListener('blur', () => {
 // ===== Rendering =====
 function draw() {
   requestAnimationFrame(draw);
-  if (!cfg) return;
+  if (!cfg || stage.classList.contains('hidden')) return;
   const W = cfg.field.width, H = cfg.field.height, groundY = cfg.groundY;
 
   ctx.clearRect(0, 0, W, H);
@@ -290,13 +372,11 @@ function drawHud(p, side) {
   const align = side === 'left' ? 'left' : 'right';
   const anchor = side === 'left' ? x : x + barW;
 
-  // name
   ctx.textAlign = align;
   ctx.fillStyle = COLORS[side];
   ctx.font = 'bold 16px system-ui, sans-serif';
   ctx.fillText(m.name, anchor, 20);
 
-  // HP bar
   const hpY = 28, hpH = 15;
   const hpFrac = Math.max(0, p.hp / cfg.maxHp);
   ctx.fillStyle = '#0b0e14'; ctx.strokeStyle = '#2a3346'; ctx.lineWidth = 2;
@@ -306,7 +386,6 @@ function drawHud(p, side) {
   ctx.fillStyle = COLORS[side];
   roundRect(hpFx, hpY, hpW, hpH, 5); ctx.fill();
 
-  // meter bar
   const mY = 47, mH = 6;
   const mFrac = Math.max(0, p.mp / cfg.maxMeter);
   const full = p.mp >= cfg.maxMeter;
@@ -317,31 +396,24 @@ function drawHud(p, side) {
   ctx.fillStyle = full && (latest.t % 12 < 6) ? '#ffffff' : COLORS.meter;
   roundRect(mFx, mY, mW, mH, 3); ctx.fill();
 
-  // rank + AP (+ special-ready note)
   ctx.textAlign = align;
   ctx.font = 'bold 12px system-ui, sans-serif';
   ctx.fillStyle = rank.color;
   ctx.fillText(rank.name, anchor, 67);
-  ctx.fillStyle = '#cfd6e0';
-  ctx.font = '12px system-ui, sans-serif';
   const apText = `AP ${m.ap}` + (full ? '  ★SP' : '');
   const rankW = measureBold(rank.name);
   ctx.font = '12px system-ui, sans-serif';
+  ctx.fillStyle = '#cfd6e0';
   if (side === 'left') ctx.fillText('・ ' + apText, anchor + rankW + 6, 67);
   else ctx.fillText(apText + ' ・', anchor - rankW - 6, 67);
 }
-
-function measureBold(t) {
-  ctx.font = 'bold 12px system-ui, sans-serif';
-  return ctx.measureText(t).width;
-}
+function measureBold(t) { ctx.font = 'bold 12px system-ui, sans-serif'; return ctx.measureText(t).width; }
 
 function drawRoundPips() {
   if (!latest.roundResults) return;
   const W = cfg.field.width;
   const r = 9, gap = 26, n = 3;
-  const totalW = (n - 1) * gap;
-  const cx0 = W / 2 - totalW / 2;
+  const cx0 = W / 2 - ((n - 1) * gap) / 2;
   const y = 20;
   for (let i = 0; i < n; i++) {
     const cx = cx0 + i * gap;
@@ -358,7 +430,6 @@ function drawRoundPips() {
 
 function drawCountdown() {
   const W = cfg.field.width, H = cfg.field.height;
-  // round-over banner
   if (latest.phase === 'roundover' && meta) {
     const rw = latest.roundWinner;
     const txt = rw === 'draw' ? '引き分け' : `${meta[rw].name} がラウンド取得！`;
@@ -369,7 +440,6 @@ function drawCountdown() {
     ctx.fillText(txt, W / 2, H * 0.4);
     return;
   }
-
   const c = latest.count;
   if (!c) return;
   ctx.textAlign = 'center';
